@@ -1,0 +1,432 @@
+var RGI = ee.FeatureCollection("users/josiaszeller/RGVI_v6");
+var alos = ee.Image("JAXA/ALOS/AW3D30/V2_2");
+var geometry = /* color: #d63000 */ee.Geometry.MultiPoint();
+
+
+/*
+*   April 2020
+* 
+*   Code for Master's thesis
+*   Automated classification of supraglacial surface facies for snow line altitude monitoring 
+*  
+*   Josias Zeller, josias.zeller@uzh.ch
+*   University of Zurich, Department of Geography
+*
+
+*   Every module can be accessed: Just add 'https://code.earthengine.google.com/?scriptPath='
+*   to the link in this Script (string that is called with the <require>-command)
+*
+*/
+// Start GUI
+// Print Parameterization to the Console
+Map.addLayer(RGI,{color: 'green'}, 'Randolph Glacier Inventory 6.0');
+Map.setCenter(9.2825, 46.8198,8);
+
+var glimidpanel = ui.Panel({
+  layout: ui.Panel.Layout.flow('vertical')});
+  glimidpanel.style().set({width: '300px',
+  position: 'top-center'});
+var glimdidentifier = ui.Label('Not sure what the GLIMS ID is? Just click on a glacier.');
+glimdidentifier.style().set('color', 'green');
+glimdidentifier.style().set('fontWeight', 'bold');
+glimdidentifier.style().set({
+  fontSize: '16px',
+  padding: '10px'
+});
+glimidpanel.add(glimdidentifier)  ;
+Map.add(glimidpanel);
+/*
+Map.onClick(function(coords) {
+  var location = 'lon: ' + coords.lon.toFixed(4) + ' ' +
+                 'lat: ' + coords.lat.toFixed(4);
+  var click_point = ee.Geometry.Point(coords.lon, coords.lat);
+  var glimsidinfo = ui.Label('GLIMS ID: ',ee.String(RGI.filterBounds(click_point).first().get('GLIMSId')));
+  glimidpanel.add(glimsidinfo);
+}); 
+*/
+// Create a panel with vertical flow layout.
+var panel = ui.Panel({
+  layout: ui.Panel.Layout.flow('vertical')});
+  panel.style().set({width: '300px',
+  position: 'top-right'});
+
+
+var title = ui.Label('SLA and SCR Extraction for Glaciers');
+title.style().set('color', 'blue');
+title.style().set('fontWeight', 'bold');
+title.style().set({
+  fontSize: '18px',
+  padding: '10px'
+});
+//------------------------------------------------------------------------------------
+var info = ui.Panel({
+  layout: ui.Panel.Layout.flow('vertical')});
+  info.style().set({width: '500px',
+  position: 'bottom-center'});
+
+var info1 =ui.Label('This GEE-Application is in beta mode. Its part of a Master thesis at the Department of Geography, University of Zurich' );
+var info12 = ui.Label('Visit www.slamonitoring.josiaszeller.ch for additional information or for the code to export time-series');
+var info2 = ui.Label('If there are questions or technical problems: info@josiaszeller.ch');
+info.add(info1);
+info.add(info12);
+info.add(info2);
+
+var startyearslider =   ui.Slider({min: 1984, max: 2020, value: 2019, step: 1, style: {stretch: 'horizontal'}});
+var endyearslider =     ui.Slider({min: 1984, max: 2020, value: 2019, step: 1, style: {stretch: 'horizontal'}});
+var startdoy =          ui.Slider({min: 1, max: 366, value: 230, step: 1, style: {stretch: 'horizontal'}}); 
+var enddoy =            ui.Slider({min: 1, max: 366, value: 250, step: 1, style: {stretch: 'horizontal'}}); 
+var cloudc =            ui.Slider({min: 0, max: 199, value: 70, step: 1, style: {stretch: 'horizontal'}}); 
+var coverimg =          ui.Slider(0,100, 90,1);
+var hsstartslider =     ui.Slider(0, 365, 300);
+var hsendslider =       ui.Slider(0, 365, 99);
+//print(hillshadowbox);
+var checkbox = ui.Checkbox('Add Hill Shadow', false);
+var textbox = ui.Textbox({
+  placeholder: 'Enter GLIMS-ID here...'
+});
+
+var welcome = ui.Label('Select a specific Glacier and a date or a short time period');
+panel.add(welcome);
+panel.add(title);
+var label1 = ui.Label(' ↓ Set Start (Year)');
+panel.add(label1);
+panel.add(startyearslider);
+var label2 = ui.Label(' ↓ Set End (Year)');
+panel.add(label2);
+panel.add(endyearslider);
+var label3 = ui.Label(' ↓ Set Start (DOY)');
+panel.add(label3);
+panel.add(startdoy);
+var label4 = ui.Label(' ↓ Set End (DOY)');
+panel.add(label4);
+panel.add(enddoy);
+var label5 = ui.Label(' ↓ Set minimum Cloud Free Area (%)');
+panel.add(label5);
+panel.add(cloudc);
+
+panel.add(checkbox);
+var label6 = ui.Label(' GLIMS-ID (e.g. G010758E46800N)');
+panel.add(label6);
+panel.add(textbox);
+
+
+//print(hsstartslider, 'Start Hill Shadow (DOY)'); 
+//print(hsendslider, 'End Hill Shadow (DOY)');
+var button = ui.Button({
+  label: 'Run',
+  onClick: function() {
+//Select Glacier-Outline   
+var glimsid = textbox.getValue();
+//var glimsid =                   'G010818E46876N';
+                                //CH Steingletscher:    G008427E46699N 
+                                //CH Findelengletscher: G007871E45994N
+                                //CH Rhonegletscher     G008397E46624N    
+  //AT Hintereisferner:   G010758E46800N --> Use 2019 DOY: 207
+  //AT Kesselwandferner:  G010791E46842N
+  //AT Vernagtferner:     G010818E46876N
+                                //IN G071570E39610N
+                                //KGZ Abramov:          G071570E39610N
+                                //KGZ Glacier No. 354   G078164E41793N --> Use 2015 DOY 192 to 194
+                                //Add Layer with RGI-Outlines --> use:  
+
+var startyear =           startyearslider.getValue();
+var endyear =             endyearslider.getValue();
+var filterDOYstart =      startdoy.getValue();    // Start of Range: use DOY-Number to filter the range
+var filterDOYend =        enddoy.getValue();      // End of Range: DOY-Number to filter the range
+var cloudiness =          cloudc.getValue();      //% (Area over the Glacier that is not covered with Clouds)
+var coverage =            coverimg.getValue();
+
+//var hsstart =             hsstartslider.getValue();
+//var hsend =               hsendslider.getValue();
+
+///////////////////   VISUALISATION   ////////////////////////////////////
+var palette = ['f27324', '24a3f2', '00ff00', 'ff00cc','7e23b5','ffffff',  'c39797','000000', 'e5ffe5'];
+var geometry =            RGI.filterMetadata('GLIMSId','equals',glimsid);
+                          Map.centerObject(geometry);
+
+///////////////////   MODULE PREP    /////////////////////////////////////
+var composites =          require('users/josiaszeller/Thesis:Preparation_Module');
+var add_Cloudshadow =     require('users/josiaszeller/Thesis:Cloudshadow_Mask');
+
+var hsboolean =           checkbox.getValue();
+var resultPRE =           composites.imageCollection(glimsid, startyear, endyear, cloudiness, coverage, filterDOYstart,filterDOYend, hsboolean);
+var result =              resultPRE.filterMetadata('system:time_start','not_equals', 1443176819706); //filter out this image due to wrong scaled bands
+
+var prepfinal1 =          result.map(add_Cloudshadow.CloudShadows);
+var prepfinal =           prepfinal1.sort('system:time_start');
+
+panel.remove(welcome);
+panel.remove(label1);
+panel.remove(startyearslider);
+panel.remove(label2);
+panel.remove(endyearslider);
+panel.remove(label3);
+panel.remove(startdoy);
+panel.remove(label4);
+panel.remove(enddoy);
+panel.remove(label5);
+panel.remove(cloudc);
+panel.remove(checkbox);
+panel.remove(textbox);
+panel.remove(label6);
+panel.remove(button);
+Map.remove(glimidpanel);
+
+Map.addLayer(prepfinal.first().reproject((prepfinal.first().select('blue').projection())), {bands: ['red','green', 'blue'], min:0, max:1}, 'RGB-Image');
+var decisiontree = require('users/josiaszeller/Thesis:Classifier');
+var mapCollection = prepfinal.map(decisiontree.decisiontree);
+Map.addLayer(mapCollection.first(), {min: 0, max: 8, palette:palette}, 'Classification of the first Image in the Collection');
+//---------
+// set position of panel
+var legend = ui.Panel({
+  style: {
+    position: 'bottom-left',
+    padding: '8px 15px'
+  }
+});
+ 
+// Create legend title
+var legendTitle = ui.Label({
+  value: 'Legend',
+  style: {
+    fontWeight: 'bold',
+    fontSize: '18px',
+    margin: '0 0 4px 0',
+    padding: '0'
+    }
+});
+ 
+// Add the title to the panel
+legend.add(legendTitle);
+ 
+// Creates and styles 1 row of the legend.
+var makeRow = function(color, name) {
+ 
+      // Create the label that is actually the colored box.
+      var colorBox = ui.Label({
+        style: {
+          backgroundColor: '#' + color,
+          // Use padding to give the box height and width.
+          padding: '8px',
+          margin: '0 0 4px 0'
+        }
+      });
+ 
+      // Create the label filled with the description text.
+      var description = ui.Label({
+        value: name,
+        style: {margin: '0 0 4px 6px'}
+      });
+ 
+      // return the panel
+      return ui.Panel({
+        widgets: [colorBox, description],
+        layout: ui.Panel.Layout.Flow('horizontal')
+      });
+};
+ 
+//  Palette with the colors
+var palette1 = ['f27324', '24a3f2', '00ff00', 'ff00cc','7e23b5',  'c39797', 'e5ffe5'];
+ 
+// name of the legend
+var names = ['Ice', 'Snow','Water','Debris cover', 'Clouds', 'Shadow on Snow', 'Undefined Shadow'];
+ 
+// Add color and and names
+for (var i = 0; i < 6; i++) {
+  legend.add(makeRow(palette1[i], names[i]));
+  }  
+ 
+// add legend to map (alternatively you can also print the legend to the console)
+Map.add(legend);
+
+var infowait = ui.Label('It may take some time before a result is displayed...');
+
+var dateimage = ee.Date(prepfinal.first().get('system:time_start'));
+var dateraw = dateimage.format('yyyy-MM-dd');
+
+var dateready = dateraw.evaluate(function(result) {
+    // When the server returns the value, show it.
+    panel.widgets().set(4, ui.Label({
+      value: 'Date of the image displayed: ' + result,
+    }));
+  
+});
+
+
+var datelistraw = prepfinal.aggregate_array('system:time_start');
+var datechanger = function(datein){
+  var date = ee.Date(datein).format('yyyy-MM-dd');
+  return date;
+};
+var datelist1 = datelistraw.map(datechanger);
+var dateliststring = datelist1.join("  &            ");
+var datelistready = dateliststring.evaluate(function(result) {
+    // When the server returns the value, show it.
+    panel.widgets().set(5, ui.Label({
+      value: 'Dates of available images for the selected time period (all the values are available for download): ' + result,
+    }));
+  
+});
+//print(datelist)
+//-----------
+
+panel.add(infowait);
+
+var getAAR =      require('users/josiaszeller/Thesis:Altitude_Bins');
+var mp =          require('users/josiaszeller/Thesis:Main_Patches');
+//var histogram =           require('users/josiaszeller/modules:DEV_Extract_SLA_Histogram_20200428_1');
+
+var buttonAB = ui.Button({
+  label: 'Altitude Bin Approach',
+  onClick: function() {
+var AARFCcollection =  ee.FeatureCollection(mapCollection.map(getAAR.ABextraction));
+//-------------------------------
+
+// Create a panel and add it to the map.
+var results1 = ui.Panel({
+  layout: ui.Panel.Layout.flow('vertical')});
+  results1.style().set({width: '300px',
+  position: 'top-left'});
+
+Map.add(results1);
+//results.add(ui.Label('Results'))
+
+var titleresults = ui.Label('Results Altitude Bin-Approach');
+titleresults.style().set('color', 'blue');
+titleresults.style().set('fontWeight', 'bold');
+titleresults.style().set({
+  fontSize: '18px',
+  padding: '10px'});
+  
+results1.add(titleresults);
+
+var download1 = (ui.Label('Download Data').setUrl((ee.FeatureCollection(AARFCcollection)
+.getDownloadURL({     format: 'csv',     filename: 'AB_results',     
+selectors: AARFCcollection.first().propertyNames().getInfo()   }))));
+results1.add(download1) ;
+
+
+  results1.add(ui.Label({
+    value: 'Loading...',
+    style: {color: 'gray'}}));
+  var slaprep = AARFCcollection.first().get('SLA AB-Approach');
+  var computedValue = slaprep;
+  computedValue.evaluate(function(result) {
+    // When the server returns the value, show it.
+    results1.widgets().set(2, ui.Label({
+      value: 'Snow Line Altitude: ' + result, //.toFixed(2),
+    }));
+  });
+
+  var scprep = AARFCcollection.first().get('Snow Cover Ratio (Approximation)');
+  var computedValue1 = scprep;
+  computedValue1.evaluate(function(result) {
+    // When the server returns the value, show it.
+    results1.widgets().set(3, ui.Label({
+      value: 'Approximation: Snow Cover Ratio (%): ' + result, //.toFixed(2),
+    
+    }));
+    
+
+  });
+
+
+}
+
+});
+var buttonMP = ui.Button({
+  label: 'Main Patches Approach',
+  onClick: function() {
+var MPcollection =                ee.FeatureCollection(mapCollection.map(mp.sla_extract_patch));
+
+//Export.table.toDrive(MPcollection,'MainPatches', 'testing1');
+// Create a panel and add it to the map.
+var results = ui.Panel({
+  layout: ui.Panel.Layout.flow('vertical')});
+  results.style().set({width: '300px',
+  position: 'middle-left'});
+
+Map.add(results);
+//results.add(ui.Label('Results'))
+
+var titleresults = ui.Label('Results Main-Patches-Approach');
+titleresults.style().set('color', 'blue');
+titleresults.style().set('fontWeight', 'bold');
+titleresults.style().set({
+  fontSize: '18px',
+  padding: '10px'});
+results.add(titleresults);
+
+var download = (ui.Label('Download Data').setUrl((ee.FeatureCollection(MPcollection)
+.getDownloadURL({     format: 'csv',     filename: 'MP_results',     
+selectors: MPcollection.first().propertyNames().getInfo()   }))));
+results.add(download);
+ 
+  results.add(ui.Label({
+    value: 'Loading...',
+    style: {color: 'gray'}}));
+  var slaprep = MPcollection.first().get('SLA MP-Approach');
+  var computedValue = slaprep;
+  computedValue.evaluate(function(result) {
+    // When the server returns the value, show it.
+    results.widgets().set(2, ui.Label({
+      value: 'Snow Line Altitude: ' + result, //.toFixed(2),
+    }));
+  });
+
+  var scprep = MPcollection.first().get('Snow Cover Ratio');
+  var computedValue1 = scprep;
+  computedValue1.evaluate(function(result) {
+    // When the server returns the value, show it.
+    results.widgets().set(3, ui.Label({
+      value: 'Snow Cover Ratio (%): ' + result, //.toFixed(2),
+    }));
+  });
+
+
+panel.add(buttonMP);
+}});
+
+//var Histoocollection =               mapCollection.map(histogram.sla_extract);
+//Export.table.toDrive(Histoocollection, 'Histogram', 'testing1');
+
+
+//}});
+//print(buttonDT)
+//}
+panel.widgets().set(1, buttonAB);
+panel.widgets().set(2, buttonMP);
+}});
+
+
+
+panel.add(button);
+Map.add(panel);
+Map.add(info);
+
+
+Map.onClick(function(coords) {
+  // Show the loading label.
+  glimidpanel.widgets().set(0, ui.Label({
+    value: 'Loading...',
+    style: {color: 'gray'}
+  }));
+
+  // Determine the mean NDVI, a long-running server operation.
+//  var point = ee.Geometry.Point(coords.lon, coords.lat);
+  var location = 'lon: ' + coords.lon.toFixed(4) + ' ' +
+                 'lat: ' + coords.lat.toFixed(4);
+  var click_point = ee.Geometry.Point(coords.lon, coords.lat);
+  var id = RGI.filterBounds(click_point);
+
+  var computedValue = ee.String(id.first().get('GLIMSId'));
+
+  // Request the value from the server.
+  computedValue.evaluate(function(result) {
+    // When the server returns the value, show it.
+    glimidpanel.widgets().set(0, ui.Label({
+      value: 'GLIMS ID: ' + result,
+    }));
+  });
+});
+    
