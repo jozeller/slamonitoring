@@ -1,3 +1,4 @@
+var RGI = ee.FeatureCollection("users/josiaszeller/RGVI_v6");
 /*
  .o88b. db       .d88b.  db    db d8888b. .d8888. db   db  .d8b.  d8888b.  .d88b.  db   d8b   db 
 d8P  Y8 88      .8P  Y8. 88    88 88  `8D 88'  YP 88   88 d8' `8b 88  `8D .8P  Y8. 88   I8I   88 
