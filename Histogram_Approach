@@ -12,7 +12,8 @@ YP   YP Y888888P `8888Y'    YP     `Y88P'   Y888P  88   YD YP   YP YP  YP  YP
 // 2020-06-30
 // Josias Zeller, josias.zeller@geo.uzh.ch
 */
-
+var RGI = ee.FeatureCollection("users/josiaszeller/RGVI_v6"),
+    alos = ee.Image("JAXA/ALOS/AW3D30/V2_2");
 exports.sla_extract = function(img) {  
 
 ///////   Creating variables   ///////////////////////////////////////////////
